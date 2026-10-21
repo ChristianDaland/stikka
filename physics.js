@@ -31,8 +31,17 @@ velocity.y += GRAVITY * selectedCoinType.weight * dt;
 currentCoinMesh.position.addScaledVector(velocity, dt);
 }
 
+// Minste fallfart (m/s) som regnes som et treff med lyd og effekter
+const IMPACT_MIN_SPEED = 1.0;
+
+// Nærmeste vinkel der mynten ligger flatt (0, π, 2π …)
+function flatAngle(angle) {
+return Math.round(angle / Math.PI) * Math.PI;
+}
+
 // Kollisjon med bakken
-function handleGroundCollision(dt, state, onSettled) {
+// callbacks.onImpact(fart) kalles ved hvert treff, callbacks.onSettled når mynten har stoppet
+function handleGroundCollision(dt, state, callbacks) {
 const { selectedCoinType, currentCoinMesh, velocity, rotVelocity } = state;
 if (!currentCoinMesh || !selectedCoinType) return;
 
@@ -40,6 +49,9 @@ const groundY = getCoinHeight(selectedCoinType) / 2;
 
 if (currentCoinMesh.position.y <= groundY) {
 currentCoinMesh.position.y = groundY;
+
+const impactSpeed = -velocity.y;
+if (impactSpeed > IMPACT_MIN_SPEED) callbacks.onImpact(impactSpeed);
 
 // Sprett – lavere for tunge mynter
 velocity.y = -velocity.y * selectedCoinType.bounce;
@@ -49,8 +61,16 @@ const friction = frameDamping(selectedCoinType.friction, dt);
 velocity.x *= friction;
 velocity.z *= friction;
 
-// Rotasjonsdemping ved treff
-rotVelocity.multiplyScalar(frameDamping(0.85, dt));
+// Rotasjonsdemping ved treff – velting dempes kraftig, snurring rundt y litt
+rotVelocity.x *= frameDamping(0.6, dt);
+rotVelocity.z *= frameDamping(0.6, dt);
+rotVelocity.y *= frameDamping(0.85, dt);
+
+// Mynten legger seg flatt mot bakken
+const rot = currentCoinMesh.rotation;
+const ease = 1 - frameDamping(0.75, dt);
+rot.x += (flatAngle(rot.x) - rot.x) * ease;
+rot.z += (flatAngle(rot.z) - rot.z) * ease;
 
 // Sjekk om mynten har stoppet
 if (
@@ -60,7 +80,9 @@ Math.abs(velocity.x) < 0.08
 ) {
 velocity.set(0, 0, 0);
 rotVelocity.set(0, 0, 0);
-onSettled();
+rot.x = flatAngle(rot.x);
+rot.z = flatAngle(rot.z);
+callbacks.onSettled();
 }
 }
 }

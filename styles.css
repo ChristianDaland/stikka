@@ -12,6 +12,7 @@ canvas {
     position: relative;
     z-index: 1; /* under alt annet */
     pointer-events: auto; /* ← viktig: canvas skal motta klikk normalt */
+    touch-action: none;   /* drag på mobil skal kaste, ikke scrolle/zoome */
 }
 
 /* HOVEDMENY-KNAPP */

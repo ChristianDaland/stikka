@@ -2,8 +2,12 @@
 // Avanserte partikler ved treff
 // - Fargede støvpartikler basert på mynttype
 // - Glød-flash
-// - Fading og hastighetsdemping
+// - Fading, tyngdekraft og hastighetsdemping
 //
+
+// Geometri deles mellom alle treff
+const particleGeo = new THREE.SphereGeometry(0.022, 6, 6);
+const flashGeo = new THREE.SphereGeometry(0.12, 12, 12);
 
 function spawnParticles(scene, position, type) {
 const group = new THREE.Group();
@@ -21,33 +25,31 @@ type === "gull" ? 0xfff4b2 :
 type === "stål" ? 0x9fb3ff :
 0xffffff;
 
-// Små partikler
-for (let i = 0; i < 28; i++) {
-const geo = new THREE.SphereGeometry(0.012, 6, 6);
-const mat = new THREE.MeshBasicMaterial({
+// Alle støvpartiklene fader likt, så de kan dele ett materiale
+const particleMat = new THREE.MeshBasicMaterial({
 color: baseColor,
 transparent: true,
 opacity: 0.9
 });
 
-const p = new THREE.Mesh(geo, mat);
+// Små partikler
+const particles = [];
+for (let i = 0; i < 28; i++) {
+const p = new THREE.Mesh(particleGeo, particleMat);
 p.position.copy(position);
 
-// Tilfeldig retning
+// Tilfeldig retning – mest oppover og utover
 p.velocity = new THREE.Vector3(
-(Math.random() - 0.5) * 0.5,
-Math.random() * 0.7,
-(Math.random() - 0.5) * 0.5
+(Math.random() - 0.5) * 1.6,
+0.6 + Math.random() * 1.4,
+(Math.random() - 0.5) * 1.6
 );
 
-// Demping
-p.decay = 0.9 + Math.random() * 0.08;
-
 group.add(p);
+particles.push(p);
 }
 
 // Glød-flash
-const flashGeo = new THREE.SphereGeometry(0.08, 12, 12);
 const flashMat = new THREE.MeshBasicMaterial({
 color: glowColor,
 transparent: true,
@@ -60,38 +62,39 @@ group.add(flash);
 
 scene.add(group);
 
-// Livstid
-const lifetime = 0.5;
-let elapsed = 0;
+// Livstid i sekunder (reell tid, uavhengig av bildefrekvens)
+const lifetime = 0.6;
+const startTime = performance.now();
+let lastTime = startTime;
 
-function animateParticles(dt) {
-elapsed += dt;
-const t = elapsed / lifetime;
+function animateParticles(now) {
+const dt = Math.min((now - lastTime) / 1000, 0.05);
+lastTime = now;
+const t = Math.min(1, (now - startTime) / 1000 / lifetime);
 
-group.children.forEach(p => {
-if (p === flash) {
-// Fade ut glød
-flash.material.opacity = Math.max(0, 0.7 * (1 - t));
-return;
-}
-
-// Bevegelse
+const drag = frameDamping(0.92, dt);
+particles.forEach(p => {
+p.velocity.y += GRAVITY * 0.6 * dt;
+p.velocity.multiplyScalar(drag);
 p.position.addScaledVector(p.velocity, dt);
 
-// Demp hastighet
-p.velocity.multiplyScalar(p.decay);
-
-// Fade ut
-p.material.opacity = Math.max(0, p.material.opacity - dt * 2.0);
+// Ikke under bakken
+if (p.position.y < 0.01) p.position.y = 0.01;
 });
 
-if (elapsed >= lifetime) {
+// Fade ut
+particleMat.opacity = 0.9 * (1 - t);
+flashMat.opacity = 0.7 * (1 - t) * (1 - t);
+
+if (t >= 1) {
 scene.remove(group);
+particleMat.dispose();
+flashMat.dispose();
 return;
 }
 
-requestAnimationFrame(() => animateParticles(0.016));
+requestAnimationFrame(animateParticles);
 }
 
-animateParticles(0.016);
+requestAnimationFrame(animateParticles);
 }

@@ -12,6 +12,7 @@ let activeCoinsInScene = [];
 let difficultyLevel = 0;   // 🔥 Gradvis økende vanskelighet
 let STREK_Z = -12;         // Startposisjon for streken
 const STREK_MIN_Z = -28;   // Lengst unna streken kan ligge (fullt kast når ca. -32)
+const STREK_HALF_WIDTH = 2;   // Streken går fra x = -2 til x = 2
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -42,7 +43,20 @@ sunLight.position.set(-15, 20, 5);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.width = 2048;
 sunLight.shadow.mapSize.height = 2048;
+
+// Skyggekameraet må dekke hele kastebanen, ikke bare ±5 m rundt origo
+sunLight.target.position.set(0, 0, -14);
+sunLight.position.set(-15, 20, -9);
+const shadowCam = sunLight.shadow.camera;
+shadowCam.left = -22;
+shadowCam.right = 22;
+shadowCam.top = 22;
+shadowCam.bottom = -22;
+shadowCam.near = 1;
+shadowCam.far = 70;
+sunLight.shadow.bias = -0.0005;
 scene.add(sunLight);
+scene.add(sunLight.target);
 
 scene.add(new THREE.HemisphereLight(0x87ceeb, 0x5c8a4d, 0.6));
 
@@ -86,6 +100,9 @@ scene.add(grass);
 // TYDELIG H-STREK
 //
 
+// Lagene ligger under hverandre, fra bredest nederst til selve streken øverst
+// (bakken y=0 → lys kant 0.002 → outline 0.003 → skygge 0.004 → strek)
+
 // Hovedstrek
 const mainTrench = new THREE.Mesh(
     new THREE.BoxGeometry(4, 0.02, 0.15),
@@ -100,12 +117,12 @@ const mainTrench = new THREE.Mesh(
 mainTrench.position.set(0, 0.006, STREK_Z);
 scene.add(mainTrench);
 
-// Lysere kant
+// Lysere kant – bredere enn resten, så den synes rundt streken
 const mainHighlight = new THREE.Mesh(
-    new THREE.BoxGeometry(4, 0.001, 0.15),
+    new THREE.BoxGeometry(4.5, 0.001, 0.25),
     new THREE.MeshStandardMaterial({ color: 0xf6d9a3 })
 );
-mainHighlight.position.set(0, 0.008, STREK_Z);
+mainHighlight.position.set(0, 0.002, STREK_Z);
 scene.add(mainHighlight);
 
 // Skygge
@@ -131,7 +148,7 @@ const outline = new THREE.Mesh(
         opacity: 0.25
     })
 );
-outline.position.set(0, 0.009, STREK_Z);
+outline.position.set(0, 0.003, STREK_Z);
 scene.add(outline);
 
 //
@@ -165,27 +182,16 @@ let dragStart = { x: 0, y: 0 };
 let dragCurrent = { x: 0, y: 0 };
 
 let shakeTime = 0;
+let shakeDuration = 0.18;
 let shakeIntensity = 0;
+const shakeOffset = new THREE.Vector3();
 
 function triggerCameraShake(intensity = 0.12, duration = 0.18) {
     shakeIntensity = intensity;
+    shakeDuration = duration;
     shakeTime = duration;
 }
 
-//
-// 🔥 HOVEDMENY-KNAPP — CAPTURE-MODE FIX
-//
-const backBtn = document.getElementById('back-btn');
-
-// Bare stopPropagation: preventDefault på touchend ville hindret klikk på mobil
-function stopAll(e) {
-    e.stopPropagation();
-}
-
-// Stopper kast-hendelser, men lar klikk gå videre
-['mousedown', 'mouseup', 'touchstart', 'touchend'].forEach(evt => {
-    backBtn.addEventListener(evt, stopAll, true);
-});
 //
 // START-KNAPP
 //
@@ -276,7 +282,7 @@ function setupTurn() {
     const badge = document.getElementById('player-badge');
     badge.textContent = cfg.name;
     badge.style.background = cfg.hex;
-    badge.style.color = (currentPlayerIndex === 1 || currentPlayerIndex === 4) ? '#fff' : '#111';
+    badge.style.color = readableTextColor(cfg.hex);
 
     coinCounts[currentPlayerIndex]--;
 
@@ -293,59 +299,53 @@ function setupTurn() {
 
 
 //
-// 🎯 INPUT — MUS
+// 🎯 INPUT — MUS OG TOUCH (pointer events på selve canvaset)
+// Klikk på knapper og paneler går dermed ikke til kastet.
 //
-window.addEventListener('mousedown', (e) => {
-    if (isThrown || !currentCoinMesh) return;
+const MIN_DRAG_PX = 12;   // Kortere drag bakover regnes som et vanlig klikk
+const canvas = renderer.domElement;
+let activePointerId = null;
+
+function cancelDrag() {
+    isDragging = false;
+    activePointerId = null;
+    aimDots.forEach(d => d.visible = false);
+    setPowerBar(0);
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+    if (isThrown || isDragging || isChargingKey || !currentCoinMesh || !e.isPrimary) return;
 
     isDragging = true;
+    activePointerId = e.pointerId;
+    canvas.setPointerCapture(e.pointerId);   // Får pointerup selv om man slipper utenfor vinduet
     dragStart = { x: e.clientX, y: e.clientY };
     dragCurrent = { x: e.clientX, y: e.clientY };
 });
 
-window.addEventListener('mousemove', (e) => {
-    if (!isDragging || !currentCoinMesh) return;
+canvas.addEventListener('pointermove', (e) => {
+    if (!isDragging || e.pointerId !== activePointerId) return;
     dragCurrent = { x: e.clientX, y: e.clientY };
     updateAimTrajectory();
 });
 
-window.addEventListener('mouseup', (e) => {
-    if (!isDragging || !currentCoinMesh) return;
+canvas.addEventListener('pointerup', (e) => {
+    if (!isDragging || e.pointerId !== activePointerId) return;
+
+    if (dragCurrent.y - dragStart.y < MIN_DRAG_PX) {
+        cancelDrag();
+        return;
+    }
 
     isDragging = false;
+    activePointerId = null;
     const impulse = calculateMouseImpulse();
     playThrowSound(selectedCoinType);
     executeThrow(impulse);
 });
 
-
-//
-// 🎯 INPUT — TOUCH
-//
-window.addEventListener('touchstart', (e) => {
-    if (isThrown || !currentCoinMesh) return;
-
-    isDragging = true;
-    const touch = e.touches[0];
-    dragStart = { x: touch.clientX, y: touch.clientY };
-    dragCurrent = { x: touch.clientX, y: touch.clientY };
-});
-
-window.addEventListener('touchmove', (e) => {
-    if (!isDragging || !currentCoinMesh) return;
-
-    const touch = e.touches[0];
-    dragCurrent = { x: touch.clientX, y: touch.clientY };
-    updateAimTrajectory();
-});
-
-window.addEventListener('touchend', (e) => {
-    if (!isDragging || !currentCoinMesh) return;
-
-    isDragging = false;
-    const impulse = calculateMouseImpulse();
-    playThrowSound(selectedCoinType);
-    executeThrow(impulse);
+canvas.addEventListener('pointercancel', (e) => {
+    if (e.pointerId === activePointerId) cancelDrag();
 });
 
 
@@ -353,7 +353,7 @@ window.addEventListener('touchend', (e) => {
 // 🎯 INPUT — TASTATUR
 //
 window.addEventListener('keydown', (e) => {
-    if (isThrown || isChargingKey || !currentCoinMesh) return;
+    if (isThrown || isChargingKey || isDragging || !currentCoinMesh) return;
 
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
         isChargingKey = true;
@@ -456,7 +456,10 @@ function updateAimTrajectory() {
 // UTFØR KAST
 //
 function executeThrow(impulse) {
+    if (isThrown) return;
     isThrown = true;
+    isDragging = false;
+    isChargingKey = false;
     aimDots.forEach(d => d.visible = false);
     velocity.copy(impulse);
     rotVelocity.set(
@@ -469,18 +472,22 @@ function executeThrow(impulse) {
 //
 // AVSTANDSMÅLING
 //
+// Avstand fra myntens sentrum til nærmeste punkt på streken (et linjestykke)
 function checkDistance() {
-    const diffZ = currentCoinMesh.position.z - STREK_Z;
-    const cm = Math.round(diffZ * 100);
-    const absCm = Math.abs(cm);
+    const pos = currentCoinMesh.position;
+    const diffZ = pos.z - STREK_Z;
+    const sideX = Math.max(0, Math.abs(pos.x) - STREK_HALF_WIDTH);
+    const absCm = Math.round(Math.hypot(diffZ, sideX) * 100);
     roundDistances[currentPlayerIndex] = absCm;
+
+    const sideText = sideX > 0 ? " (på siden)" : "";
 
     if (absCm === 0) {
         setDistanceText(`PERFEKT TREFF! (0 cm)`, "#2ecc71");
-    } else if (cm > 0) {
-        setDistanceText(`${cm} cm for kort`, "#e74c3c");
+    } else if (diffZ > 0) {
+        setDistanceText(`${absCm} cm for kort${sideText}`, "#e74c3c");
     } else {
-        setDistanceText(`${absCm} cm for langt`, "#e67e22");
+        setDistanceText(`${absCm} cm for langt${sideText}`, "#e67e22");
     }
 
     const btn = document.getElementById('next-btn');
@@ -582,24 +589,31 @@ function animate() {
             currentCoinMesh,
             velocity,
             rotVelocity
-        }, () => {
+        }, {
+            // Treff i bakken – effektene skaleres etter fallfarten
+            onImpact: (speed) => {
+                const strength = Math.min(1, speed / 6);
 
-            playHitSound(selectedCoinType);
+                playHitSound(selectedCoinType, strength);
 
-            spawnParticles(
-                scene,
-                currentCoinMesh.position.clone(),
-                selectedCoinType.id
-            );
+                spawnParticles(
+                    scene,
+                    currentCoinMesh.position.clone(),
+                    selectedCoinType.id
+                );
 
-            triggerCameraShake(
-                selectedCoinType.weight > 1.0 ? 0.16 :
-                selectedCoinType.weight < 0.5 ? 0.08 :
-                0.12
-            );
+                triggerCameraShake(
+                    (selectedCoinType.weight > 1.0 ? 0.16 :
+                    selectedCoinType.weight < 0.5 ? 0.08 :
+                    0.12) * strength
+                );
+            },
 
-            isSettled = true;
-            checkDistance();
+            // Mynten ligger i ro
+            onSettled: () => {
+                isSettled = true;
+                checkDistance();
+            }
         });
 
         // Kamera følger mynten
@@ -613,15 +627,21 @@ function animate() {
         );
     }
 
-    // Kamera-rystelser
+    // Kamera-rystelser – legges på bare under tegningen, så kameraet ikke driver
+    shakeOffset.set(0, 0, 0);
     if (shakeTime > 0) {
-        const shakeStrength = shakeIntensity * (shakeTime / 0.18);
-        camera.position.x += (Math.random() - 0.5) * shakeStrength;
-        camera.position.y += (Math.random() - 0.5) * shakeStrength * 0.5;
+        const shakeStrength = shakeIntensity * (shakeTime / shakeDuration);
+        shakeOffset.set(
+            (Math.random() - 0.5) * shakeStrength,
+            (Math.random() - 0.5) * shakeStrength * 0.5,
+            0
+        );
         shakeTime -= dt;
     }
 
+    camera.position.add(shakeOffset);
     renderer.render(scene, camera);
+    camera.position.sub(shakeOffset);
 }
 
 animate();

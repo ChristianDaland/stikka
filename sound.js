@@ -73,16 +73,17 @@ playSyntheticThrow(320, 0.07, 0.5);
 }
 
 // Spill lyd når mynten treffer bakken
-function playHitSound(selectedCoinType) {
+// strength (0–1) skalerer volumet etter hvor hardt mynten treffer
+function playHitSound(selectedCoinType, strength = 1) {
 if (!selectedCoinType) return;
 
 const name = selectedCoinType.name.toLowerCase();
 
 if (name.includes("gull") || name.includes("stål")) {
-playSyntheticImpact(220, 0.16, 0.9);
+playSyntheticImpact(220, 0.16, 0.9 * strength);
 } else if (name.includes("sølv") || name.includes("bronse")) {
-playSyntheticImpact(420, 0.12, 0.8);
+playSyntheticImpact(420, 0.12, 0.8 * strength);
 } else {
-playSyntheticImpact(650, 0.10, 0.7);
+playSyntheticImpact(650, 0.10, 0.7 * strength);
 }
 }

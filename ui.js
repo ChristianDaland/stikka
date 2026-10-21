@@ -6,8 +6,9 @@ list.innerHTML = "";
 for (let i = 0; i < totalPlayers; i++) {
 const item = document.createElement('div');
 
-const isEliminated = coinCounts[i] <= 0 && roundDistances[i] === null;
 const isActive = (i === currentPlayerIndex);
+// Den som kaster sin siste mynt akkurat nå, er ikke ute ennå
+const isEliminated = coinCounts[i] <= 0 && roundDistances[i] === null && !isActive;
 
 item.className =
 'score-item' +
@@ -21,6 +22,15 @@ item.innerHTML =
 
 list.appendChild(item);
 }
+}
+
+// Svart eller hvit tekst, avhengig av hvor lys bakgrunnsfargen er
+function readableTextColor(hex) {
+const r = parseInt(hex.slice(1, 3), 16);
+const g = parseInt(hex.slice(3, 5), 16);
+const b = parseInt(hex.slice(5, 7), 16);
+const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+return brightness > 125 ? '#111' : '#fff';
 }
 
 // Oppdater kraftmåleren
