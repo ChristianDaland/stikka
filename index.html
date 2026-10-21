@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaste på stikka 3D - Flerspiller</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<!-- Hovedmeny-knapp -->
+<button id="back-btn" class="menu-btn">⟵ Hovedmeny</button>
+
+<!-- Oppsett-modal -->
+<div id="setup-modal">
+  <div class="modal-card">
+    <h2>Kaste på stikka 3D</h2>
+
+    <p>Velg antall spillere (1–5):</p>
+    <select id="player-count-select">
+      <option value="2" selected>2 spillere</option>
+      <option value="3">3 spillere</option>
+      <option value="4">4 spillere</option>
+      <option value="5">5 spillere</option>
+    </select>
+
+    <p>Velg type mynt:</p>
+    <select id="coin-type-select">
+      <option value="gull" selected>Gullmynt (tung, kort kast)</option>
+      <option value="sølv">Sølvmynt (balansert)</option>
+      <option value="bronse">Bronsemynt (lett, glir langt)</option>
+      <option value="stål">Stålmynt (tung, lite sprett)</option>
+      <option value="plast">Plastmynt (lett, mye sprett)</option>
+    </select>
+
+    <button id="start-btn">Start kampen!</button>
+  </div>
+</div>
+
+<!-- UI-panel -->
+<div id="ui">
+  <div class="status-row">
+    <div id="player-badge">Spiller 1</div>
+    <div>Avstand: <span id="distance" style="font-weight:bold; color:#f1c40f;">-</span></div>
+    <div>
+      Kraft:
+      <div id="power-bar-container"><div id="power-bar"></div></div>
+    </div>
+    <button id="next-btn" style="display:none;">Neste kast</button>
+  </div>
+</div>
+
+<!-- Scoreboard -->
+<div id="scoreboard">
+  <h4>Mynter i spill</h4>
+  <div id="score-list"></div>
+</div>
+
+<!-- Instruksjoner -->
+<div id="instructions">
+  Dra mynten bakover med musen <b>eller</b> hold inne <b>SPACE / PIL OPP / W</b> for å lade kastet, slipp for å kaste!
+</div>
+
+<!-- Scripts -->
+<script src="coinTypes.js"></script>
+<script src="coinModels.js"></script>
+<script src="physics.js"></script>
+<script src="ui.js"></script>
+<script src="sound.js"></script>
+<script src="particles.js"></script>
+<script src="game.js"></script>
+
+</body>
+</html>
