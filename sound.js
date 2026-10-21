@@ -3,12 +3,22 @@
 // Bruker Web Audio API til å generere lyder direkte i nettleseren
 //
 
+// Én felles AudioContext – nettlesere begrenser hvor mange som kan finnes samtidig
+let audioCtx = null;
+
+function getAudioContext() {
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+if (!AudioCtx) return null;
+
+if (!audioCtx) audioCtx = new AudioCtx();
+if (audioCtx.state === "suspended") audioCtx.resume();
+return audioCtx;
+}
+
 // Generisk "impact" lyd (treff)
 function playSyntheticImpact(frequency = 400, duration = 0.12, volume = 0.8) {
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-if (!AudioCtx) return;
-
-const ctx = new AudioCtx();
+const ctx = getAudioContext();
+if (!ctx) return;
 const osc = ctx.createOscillator();
 const gain = ctx.createGain();
 
@@ -28,10 +38,8 @@ osc.stop(ctx.currentTime + duration);
 
 // Generisk "throw" lyd (kast)
 function playSyntheticThrow(frequency = 220, duration = 0.08, volume = 0.6) {
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-if (!AudioCtx) return;
-
-const ctx = new AudioCtx();
+const ctx = getAudioContext();
+if (!ctx) return;
 const osc = ctx.createOscillator();
 const gain = ctx.createGain();
 
@@ -64,17 +72,29 @@ playSyntheticThrow(320, 0.07, 0.5);
 }
 }
 
+// Klirr når to mynter treffer hverandre
+function playCoinClink(selectedCoinType, strength = 1) {
+if (!selectedCoinType) return;
+
+if (selectedCoinType.id === "plast") {
+playSyntheticImpact(900, 0.05, 0.4 * strength);
+} else {
+playSyntheticImpact(1800, 0.09, 0.35 * strength);
+}
+}
+
 // Spill lyd når mynten treffer bakken
-function playHitSound(selectedCoinType) {
+// strength (0–1) skalerer volumet etter hvor hardt mynten treffer
+function playHitSound(selectedCoinType, strength = 1) {
 if (!selectedCoinType) return;
 
 const name = selectedCoinType.name.toLowerCase();
 
 if (name.includes("gull") || name.includes("stål")) {
-playSyntheticImpact(220, 0.16, 0.9);
+playSyntheticImpact(220, 0.16, 0.9 * strength);
 } else if (name.includes("sølv") || name.includes("bronse")) {
-playSyntheticImpact(420, 0.12, 0.8);
+playSyntheticImpact(420, 0.12, 0.8 * strength);
 } else {
-playSyntheticImpact(650, 0.10, 0.7);
+playSyntheticImpact(650, 0.10, 0.7 * strength);
 }
-}
+}

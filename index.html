@@ -17,7 +17,7 @@
   <div class="modal-card">
     <h2>Kaste på stikka 3D</h2>
 
-    <p>Velg antall spillere (1–5):</p>
+    <p>Velg antall spillere (2–5):</p>
     <select id="player-count-select">
       <option value="2" selected>2 spillere</option>
       <option value="3">3 spillere</option>
@@ -57,13 +57,23 @@
   <div id="score-list"></div>
 </div>
 
+<!-- Rundeoppsummering -->
+<div id="round-overlay">
+  <h3 id="round-title"></h3>
+  <div id="round-subtitle"></div>
+  <div id="round-results"></div>
+  <button id="round-btn"></button>
+</div>
+
 <!-- Instruksjoner -->
 <div id="instructions">
   Dra mynten bakover med musen <b>eller</b> hold inne <b>SPACE / PIL OPP / W</b> for å lade kastet, slipp for å kaste!
+  Sikt til siden med <b>A / D</b> eller <b>PIL VENSTRE / HØYRE</b>.
 </div>
 
 <!-- Scripts -->
 <script src="coinTypes.js"></script>
+<script src="scenery.js"></script>
 <script src="coinModels.js"></script>
 <script src="physics.js"></script>
 <script src="ui.js"></script>

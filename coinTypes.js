@@ -8,16 +8,21 @@ const PLAYER_CONFIGS = [
 ];
 
 // Mynttyper med finjustert fysikk
+// color/metalness/roughness styrer bare utseendet (PBR-material)
+// powerMul er kalibrert slik at fullt kast når ca. 32 m (tunge) til 38 m (lette)
 const COIN_TYPES = {
 gull: {
 name: "Gullmynt",
+id: "gull",
 weight: 1.25,
 bounce: 0.03,
 friction: 0.90,
 air: 0.982,
 rot: 0.92,
-powerMul: 0.70,
-color: 0xf1c40f,
+powerMul: 1.69,
+color: 0xe8b54a,
+metalness: 1.0,
+roughness: 0.28,
 radius: 0.27,
 height: 0.06,
 edgeBevel: 0.015
@@ -25,13 +30,16 @@ edgeBevel: 0.015
 
 sølv: {
 name: "Sølvmynt",
+id: "sølv",
 weight: 0.95,
 bounce: 0.07,
 friction: 0.89,
 air: 0.986,
 rot: 0.94,
-powerMul: 0.90,
-color: 0xbdc3c7,
+powerMul: 1.44,
+color: 0xd9dadc,
+metalness: 1.0,
+roughness: 0.22,
 radius: 0.26,
 height: 0.05,
 edgeBevel: 0.012
@@ -39,13 +47,16 @@ edgeBevel: 0.012
 
 bronse: {
 name: "Bronsemynt",
+id: "bronse",
 weight: 0.55,
 bounce: 0.12,
 friction: 0.84,
 air: 0.990,
 rot: 0.95,
-powerMul: 1.25,
-color: 0xd35400,
+powerMul: 1.11,
+color: 0xb8743a,
+metalness: 1.0,
+roughness: 0.34,
 radius: 0.25,
 height: 0.05,
 edgeBevel: 0.010
@@ -53,13 +64,16 @@ edgeBevel: 0.010
 
 stål: {
 name: "Stålmynt",
+id: "stål",
 weight: 1.45,
 bounce: 0.02,
 friction: 0.93,
 air: 0.980,
 rot: 0.90,
-powerMul: 0.65,
-color: 0x34495e,
+powerMul: 1.84,
+color: 0x8d949b,
+metalness: 1.0,
+roughness: 0.38,
 radius: 0.28,
 height: 0.06,
 edgeBevel: 0.018
@@ -67,13 +81,16 @@ edgeBevel: 0.018
 
 plast: {
 name: "Plastmynt",
+id: "plast",
 weight: 0.30,
 bounce: 0.28,
 friction: 0.78,
 air: 0.993,
 rot: 0.97,
-powerMul: 1.45,
+powerMul: 0.80,
 color: 0xe67e22,
+metalness: 0.0,
+roughness: 0.45,
 radius: 0.24,
 height: 0.045,
 edgeBevel: 0.008

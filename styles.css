@@ -12,6 +12,7 @@ canvas {
     position: relative;
     z-index: 1; /* under alt annet */
     pointer-events: auto; /* ← viktig: canvas skal motta klikk normalt */
+    touch-action: none;   /* drag på mobil skal kaste, ikke scrolle/zoome */
 }
 
 /* HOVEDMENY-KNAPP */
@@ -120,6 +121,22 @@ canvas {
     font-size: 14px;
 }
 
+.score-dist {
+    margin-left: auto;
+    padding: 0 10px;
+    color: rgba(255,255,255,0.6);
+    font-size: 12px;
+    font-weight: normal;
+}
+
+.score-coins {
+    margin-left: auto;
+}
+
+.score-dist + .score-coins {
+    margin-left: 0;
+}
+
 .score-item.active {
     font-weight: bold;
     text-decoration: underline;
@@ -173,6 +190,53 @@ select {
 button:hover {
     background: #2ecc71;
     transform: scale(1.05);
+}
+
+/* Rundeoppsummering nederst */
+#round-overlay {
+    display: none;
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 20, 0.9);
+    padding: 16px 24px;
+    border-radius: 20px;
+    color: #fff;
+    text-align: center;
+    min-width: 260px;
+    max-width: calc(100% - 32px);
+    box-sizing: border-box;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+    z-index: 60;
+}
+
+#round-overlay h3 {
+    margin: 0 0 4px 0;
+    color: #f1c40f;
+}
+
+#round-subtitle {
+    font-size: 14px;
+    color: rgba(255,255,255,0.8);
+    margin-bottom: 10px;
+}
+
+#round-results {
+    margin-bottom: 12px;
+}
+
+.round-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    font-size: 14px;
+    padding: 2px 0;
+}
+
+.round-row.winner {
+    font-weight: bold;
 }
 
 /* Instruksjoner nederst */
