@@ -3,12 +3,22 @@
 // Bruker Web Audio API til å generere lyder direkte i nettleseren
 //
 
+// Én felles AudioContext – nettlesere begrenser hvor mange som kan finnes samtidig
+let audioCtx = null;
+
+function getAudioContext() {
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+if (!AudioCtx) return null;
+
+if (!audioCtx) audioCtx = new AudioCtx();
+if (audioCtx.state === "suspended") audioCtx.resume();
+return audioCtx;
+}
+
 // Generisk "impact" lyd (treff)
 function playSyntheticImpact(frequency = 400, duration = 0.12, volume = 0.8) {
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-if (!AudioCtx) return;
-
-const ctx = new AudioCtx();
+const ctx = getAudioContext();
+if (!ctx) return;
 const osc = ctx.createOscillator();
 const gain = ctx.createGain();
 
@@ -28,10 +38,8 @@ osc.stop(ctx.currentTime + duration);
 
 // Generisk "throw" lyd (kast)
 function playSyntheticThrow(frequency = 220, duration = 0.08, volume = 0.6) {
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-if (!AudioCtx) return;
-
-const ctx = new AudioCtx();
+const ctx = getAudioContext();
+if (!ctx) return;
 const osc = ctx.createOscillator();
 const gain = ctx.createGain();
 
@@ -77,4 +85,4 @@ playSyntheticImpact(420, 0.12, 0.8);
 } else {
 playSyntheticImpact(650, 0.10, 0.7);
 }
-}
+}

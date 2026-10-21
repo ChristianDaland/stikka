@@ -11,6 +11,7 @@ let activeCoinsInScene = [];
 
 let difficultyLevel = 0;   // 🔥 Gradvis økende vanskelighet
 let STREK_Z = -12;         // Startposisjon for streken
+const STREK_MIN_Z = -28;   // Lengst unna streken kan ligge (fullt kast når ca. -32)
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -176,9 +177,9 @@ function triggerCameraShake(intensity = 0.12, duration = 0.18) {
 //
 const backBtn = document.getElementById('back-btn');
 
+// Bare stopPropagation: preventDefault på touchend ville hindret klikk på mobil
 function stopAll(e) {
     e.stopPropagation();
-    e.preventDefault();
 }
 
 // Stopper kast-hendelser, men lar klikk gå videre
@@ -229,8 +230,12 @@ function startNewRound() {
     // 🔥 Flytt streken gradvis lenger bort
     // Basis: -10 til -12
     // Økning per runde: 0.8 meter
-    // Litt random variasjon: ±0.5 meter
-    STREK_Z = (-10 - Math.random() * 2) - (difficultyLevel * 0.8);
+    // Litt random variasjon: 0–2 meter
+    // Maks STREK_MIN_Z, slik at streken blir liggende på veien og innen rekkevidde
+    STREK_Z = Math.max(
+        STREK_MIN_Z,
+        (-10 - Math.random() * 2) - (difficultyLevel * 0.8)
+    );
 
     // 🔥 Oppdater strek-objektene
     mainTrench.position.z = STREK_Z;
@@ -371,21 +376,38 @@ window.addEventListener('keyup', (e) => {
 
 
 //
+// FELLES KRAFTBEREGNING (0–100 %) – brukes av både mus og tastatur
+// side: -1 (venstre) til 1 (høyre)
+//
+function powerToImpulse(power, side = 0) {
+    const pct = Math.min(100, Math.max(0, power));
+    const baseZ = (pct / 100) * 22 + 4;
+    const powerZ = baseZ * selectedCoinType.powerMul;
+    const powerY = powerZ * 0.22;
+    const powerX = powerZ * side * 0.3;
+
+    setPowerBar(pct);
+    return new THREE.Vector3(powerX, powerY, -powerZ);
+}
+
+// Hvor langt man må dra for fullt kast
+function maxDragDistance() {
+    return Math.min(300, window.innerHeight * 0.4);
+}
+
+
+//
 // BEREGN MUS-KAST
 //
 function calculateMouseImpulse() {
     const dx = dragStart.x - dragCurrent.x;
     const dy = dragCurrent.y - dragStart.y;
+    const maxDrag = maxDragDistance();
 
-    const baseZ = dy * 0.55;
-    const baseY = dy * 0.22;
+    const power = (dy / maxDrag) * 100;
+    const side = Math.min(1, Math.max(-1, dx / maxDrag));
 
-    const powerZ = Math.max(0.8, baseZ * selectedCoinType.powerMul);
-    const powerY = Math.max(1.2, baseY * selectedCoinType.powerMul);
-    const powerX = dx * 0.15 * selectedCoinType.powerMul;
-
-    setPowerBar((powerZ / 25) * 100);
-    return new THREE.Vector3(powerX, powerY, -powerZ);
+    return powerToImpulse(power, side);
 }
 
 
@@ -393,12 +415,7 @@ function calculateMouseImpulse() {
 // BEREGN TASTATUR-KAST
 //
 function calculateKeyImpulse() {
-    const baseZ = (keyPower / 100) * 22 + 4;
-    const powerZ = baseZ * selectedCoinType.powerMul;
-    const powerY = powerZ * 0.22;
-
-    setPowerBar(keyPower);
-    return new THREE.Vector3(0, powerY, -powerZ);
+    return powerToImpulse(keyPower);
 }
 
 
@@ -413,19 +430,22 @@ function updateAimTrajectory() {
     let simVel = impulse.clone();
     const dt = 0.04;
 
+    const air = frameDamping(selectedCoinType.air, dt);
+    const friction = frameDamping(selectedCoinType.friction, dt);
+    const groundY = getCoinHeight(selectedCoinType) / 2;
+
     for (let i = 0; i < aimDots.length; i++) {
         simVel.y += GRAVITY * selectedCoinType.weight * dt;
-        simVel.x *= selectedCoinType.air;
-        simVel.z *= selectedCoinType.air;
+        simVel.x *= air;
+        simVel.z *= air;
 
         simPos.addScaledVector(simVel, dt);
 
-        const groundY = getCoinHeight(selectedCoinType) / 2;
         if (simPos.y < groundY) {
             simPos.y = groundY;
             simVel.y = -simVel.y * selectedCoinType.bounce;
-            simVel.x *= selectedCoinType.friction;
-            simVel.z *= selectedCoinType.friction;
+            simVel.x *= friction;
+            simVel.z *= friction;
         }
 
         aimDots[i].position.copy(simPos);
@@ -557,7 +577,7 @@ function animate() {
             rotVelocity
         });
 
-        handleGroundCollision({
+        handleGroundCollision(dt, {
             selectedCoinType,
             currentCoinMesh,
             velocity,
@@ -569,7 +589,7 @@ function animate() {
             spawnParticles(
                 scene,
                 currentCoinMesh.position.clone(),
-                selectedCoinType.name.toLowerCase()
+                selectedCoinType.id
             );
 
             triggerCameraShake(

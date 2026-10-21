@@ -2,6 +2,12 @@
 
 const GRAVITY = -9.82;
 
+// Dempingsfaktorene i COIN_TYPES er angitt per bilde ved 60 FPS.
+// Skaler dem etter dt slik at fysikken blir lik uansett oppdateringsfrekvens.
+function frameDamping(factor, dt) {
+return Math.pow(factor, dt * 60);
+}
+
 // Utfør ett fysikksteg
 function applyPhysicsStep(dt, state) {
 const { selectedCoinType, currentCoinMesh, velocity, rotVelocity } = state;
@@ -11,11 +17,12 @@ if (!currentCoinMesh || !selectedCoinType) return;
 currentCoinMesh.rotation.x += rotVelocity.x * dt;
 currentCoinMesh.rotation.y += rotVelocity.y * dt;
 currentCoinMesh.rotation.z += rotVelocity.z * dt;
-rotVelocity.multiplyScalar(selectedCoinType.rot);
+rotVelocity.multiplyScalar(frameDamping(selectedCoinType.rot, dt));
 
 // Luftmotstand – realistisk demping
-velocity.x *= selectedCoinType.air;
-velocity.z *= selectedCoinType.air;
+const air = frameDamping(selectedCoinType.air, dt);
+velocity.x *= air;
+velocity.z *= air;
 
 // Tyngdekraft – påvirkes av vekt
 velocity.y += GRAVITY * selectedCoinType.weight * dt;
@@ -25,7 +32,7 @@ currentCoinMesh.position.addScaledVector(velocity, dt);
 }
 
 // Kollisjon med bakken
-function handleGroundCollision(state, onSettled) {
+function handleGroundCollision(dt, state, onSettled) {
 const { selectedCoinType, currentCoinMesh, velocity, rotVelocity } = state;
 if (!currentCoinMesh || !selectedCoinType) return;
 
@@ -38,11 +45,12 @@ currentCoinMesh.position.y = groundY;
 velocity.y = -velocity.y * selectedCoinType.bounce;
 
 // Friksjon – realistisk glid
-velocity.x *= selectedCoinType.friction;
-velocity.z *= selectedCoinType.friction;
+const friction = frameDamping(selectedCoinType.friction, dt);
+velocity.x *= friction;
+velocity.z *= friction;
 
 // Rotasjonsdemping ved treff
-rotVelocity.multiplyScalar(0.85);
+rotVelocity.multiplyScalar(frameDamping(0.85, dt));
 
 // Sjekk om mynten har stoppet
 if (
