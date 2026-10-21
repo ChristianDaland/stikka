@@ -121,6 +121,22 @@ canvas {
     font-size: 14px;
 }
 
+.score-dist {
+    margin-left: auto;
+    padding: 0 10px;
+    color: rgba(255,255,255,0.6);
+    font-size: 12px;
+    font-weight: normal;
+}
+
+.score-coins {
+    margin-left: auto;
+}
+
+.score-dist + .score-coins {
+    margin-left: 0;
+}
+
 .score-item.active {
     font-weight: bold;
     text-decoration: underline;

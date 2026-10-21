@@ -8,6 +8,8 @@ let currentPlayerIndex = 0;
 let coinCounts = [];
 let roundDistances = [];
 let activeCoinsInScene = [];
+let roundStartPlayer = -1;   // Hvem som startet forrige runde
+let roundOrder = [];         // Kasterekkefølgen i denne runden
 
 let difficultyLevel = 0;   // 🔥 Gradvis økende vanskelighet
 let STREK_Z = -12;         // Startposisjon for streken
@@ -166,6 +168,24 @@ for (let i = 0; i < 20; i++) {
 }
 
 //
+// LEDER-MARKERING – ring på bakken rundt mynten som ligger nærmest streken
+//
+const LEADER_MARKER_Y = 0.02;   // Over strek-lagene (toppen av streken er 0.016)
+const leaderMarker = new THREE.Mesh(
+    new THREE.RingGeometry(0.36, 0.43, 40),
+    new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false
+    })
+);
+leaderMarker.rotation.x = -Math.PI / 2;
+leaderMarker.visible = false;
+scene.add(leaderMarker);
+
+//
 // KASTLOGIKK – variabler
 //
 let currentCoinMesh = null;
@@ -205,6 +225,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
     coinCounts = new Array(totalPlayers).fill(10);
 
     difficultyLevel = 0;   // 🔥 Nullstill vanskelighetsgrad ved nytt spill
+    roundStartPlayer = -1; // Første runde starter med Spiller 1
 
     startNewRound();
 });
@@ -228,7 +249,7 @@ function startNewRound() {
 
     // Nullstill rundedata
     roundDistances = new Array(totalPlayers).fill(null);
-    currentPlayerIndex = 0;
+    leaderMarker.visible = false;
 
     // 🔥 Øk vanskelighetsgrad for hver runde
     difficultyLevel++;
@@ -249,18 +270,73 @@ function startNewRound() {
     mainShadow.position.z = STREK_Z;
     outline.position.z = STREK_Z;
 
-    // Finn første spiller med mynter
-    while (currentPlayerIndex < totalPlayers && coinCounts[currentPlayerIndex] <= 0) {
-        currentPlayerIndex++;
-    }
+    // Startspilleren går på rundgang, så ingen alltid kaster først (eller sist)
+    const starter = nextPlayerWithCoins(roundStartPlayer);
 
-    if (currentPlayerIndex >= totalPlayers) {
+    if (starter === -1) {
         alert("Ingen spillere har mynter igjen. Start på nytt.");
         document.getElementById('setup-modal').style.display = 'flex';
         return;
     }
 
+    roundStartPlayer = starter;
+
+    // Kasterekkefølgen for runden: fra startspilleren og rundt, bare de med mynter
+    roundOrder = [];
+    for (let k = 0; k < totalPlayers; k++) {
+        const i = (starter + k) % totalPlayers;
+        if (coinCounts[i] > 0) roundOrder.push(i);
+    }
+
+    currentPlayerIndex = starter;
     setupTurn();
+}
+
+// Neste spiller med mynter etter `after`, rundt bordet (-1 gir første spiller)
+function nextPlayerWithCoins(after) {
+    for (let k = 1; k <= totalPlayers; k++) {
+        const i = (after + k) % totalPlayers;
+        if (coinCounts[i] > 0) return i;
+    }
+    return -1;
+}
+
+// Neste spiller i runden som ikke har kastet ennå, eller -1
+function nextPlayerInRound() {
+    const pos = roundOrder.indexOf(currentPlayerIndex);
+    for (let k = pos + 1; k < roundOrder.length; k++) {
+        if (roundDistances[roundOrder[k]] === null) return roundOrder[k];
+    }
+    return -1;
+}
+
+// Hvem ligger nærmest streken nå? Ved likt vinner den som kastet først.
+function findRoundLeader() {
+    let leader = -1;
+    roundOrder.forEach(i => {
+        const d = roundDistances[i];
+        if (d !== null && (leader === -1 || d < roundDistances[leader])) leader = i;
+    });
+    return leader;
+}
+
+function refreshScoreboard() {
+    updateScoreboard(totalPlayers, currentPlayerIndex, coinCounts, roundDistances, findRoundLeader());
+}
+
+// Flytt ringen til mynten som leder runden
+function updateLeaderMarker() {
+    const leader = findRoundLeader();
+    const coin = activeCoinsInScene.find(c => c.userData.playerIndex === leader);
+
+    if (!coin) {
+        leaderMarker.visible = false;
+        return;
+    }
+
+    leaderMarker.position.set(coin.position.x, LEADER_MARKER_Y, coin.position.z);
+    leaderMarker.material.color.set(PLAYER_CONFIGS[leader].hex);
+    leaderMarker.visible = true;
 }
 
 
@@ -286,7 +362,8 @@ function setupTurn() {
 
     coinCounts[currentPlayerIndex]--;
 
-    currentCoinMesh = createCoinMeshForType(selectedCoinType);
+    currentCoinMesh = createCoinMeshForType(selectedCoinType, cfg.hex);
+    currentCoinMesh.userData.playerIndex = currentPlayerIndex;
     currentCoinMesh.position.copy(startPos);
     scene.add(currentCoinMesh);
     activeCoinsInScene.push(currentCoinMesh);
@@ -294,7 +371,7 @@ function setupTurn() {
     camera.position.copy(defaultCamPos);
     camera.lookAt(0, 0.8, -10);
 
-    updateScoreboard(totalPlayers, currentPlayerIndex, coinCounts, roundDistances);
+    refreshScoreboard();
 }
 
 
@@ -490,15 +567,11 @@ function checkDistance() {
         setDistanceText(`${absCm} cm for langt${sideText}`, "#e67e22");
     }
 
-    const btn = document.getElementById('next-btn');
-    let hasMorePlayers = false;
+    updateLeaderMarker();
+    refreshScoreboard();
 
-    for (let i = currentPlayerIndex + 1; i < totalPlayers; i++) {
-        if (coinCounts[i] > 0 && roundDistances[i] === null) {
-            hasMorePlayers = true;
-            break;
-        }
-    }
+    const btn = document.getElementById('next-btn');
+    const hasMorePlayers = nextPlayerInRound() !== -1;
 
     btn.textContent = hasMorePlayers ? "Neste spiller" : "Kår rundevinner!";
     btn.style.display = 'inline-block';
@@ -508,32 +581,14 @@ function checkDistance() {
 // NESTE SPILLER / RUNDE
 //
 function nextTurn() {
-    let nextIndex = -1;
-
-    for (let i = currentPlayerIndex + 1; i < totalPlayers; i++) {
-        if (coinCounts[i] > 0 && roundDistances[i] === null) {
-            nextIndex = i;
-            break;
-        }
-    }
+    const nextIndex = nextPlayerInRound();
 
     if (nextIndex !== -1) {
         currentPlayerIndex = nextIndex;
         setupTurn();
     } else {
-        let bestDistance = Infinity;
-        let winnerIndex = -1;
-        let potSize = 0;
-
-        for (let i = 0; i < totalPlayers; i++) {
-            if (roundDistances[i] !== null) {
-                potSize++;
-                if (roundDistances[i] < bestDistance) {
-                    bestDistance = roundDistances[i];
-                    winnerIndex = i;
-                }
-            }
-        }
+        const winnerIndex = findRoundLeader();
+        const potSize = roundDistances.filter(d => d !== null).length;
 
         if (winnerIndex === -1) {
             alert("Ingen gyldige kast i runden.");
@@ -541,8 +596,9 @@ function nextTurn() {
             return;
         }
 
+        const bestDistance = roundDistances[winnerIndex];
         coinCounts[winnerIndex] += potSize;
-        updateScoreboard(totalPlayers, currentPlayerIndex, coinCounts, roundDistances);
+        refreshScoreboard();
 
         alert(`${PLAYER_CONFIGS[winnerIndex].name} var nærmest streken (${bestDistance} cm) og vinner ${potSize} mynter!`);
 
@@ -625,6 +681,11 @@ function animate() {
             0.5,
             currentCoinMesh.position.z
         );
+    }
+
+    // Leder-ringen pulserer svakt
+    if (leaderMarker.visible) {
+        leaderMarker.material.opacity = 0.6 + 0.3 * Math.sin(clock.elapsedTime * 5);
     }
 
     // Kamera-rystelser – legges på bare under tegningen, så kameraet ikke driver

@@ -1,5 +1,6 @@
 // Oppdater scoreboardet i høyre hjørne
-function updateScoreboard(totalPlayers, currentPlayerIndex, coinCounts, roundDistances) {
+// Viser mynter, avstanden i denne runden og en stjerne ved den som leder
+function updateScoreboard(totalPlayers, currentPlayerIndex, coinCounts, roundDistances, leaderIndex = -1) {
 const list = document.getElementById('score-list');
 list.innerHTML = "";
 
@@ -17,8 +18,13 @@ item.className =
 
 item.style.color = PLAYER_CONFIGS[i].hex;
 
+const star = i === leaderIndex ? ' ★' : '';
+const dist = roundDistances[i] !== null
+? `<span class="score-dist">${roundDistances[i]} cm</span>`
+: '';
+
 item.innerHTML =
-`<span>${PLAYER_CONFIGS[i].name}:</span> <span>${coinCounts[i]}</span>`;
+`<span>${PLAYER_CONFIGS[i].name}${star}:</span>${dist}<span class="score-coins">${coinCounts[i]}</span>`;
 
 list.appendChild(item);
 }
