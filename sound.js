@@ -72,6 +72,17 @@ playSyntheticThrow(320, 0.07, 0.5);
 }
 }
 
+// Klirr når to mynter treffer hverandre
+function playCoinClink(selectedCoinType, strength = 1) {
+if (!selectedCoinType) return;
+
+if (selectedCoinType.id === "plast") {
+playSyntheticImpact(900, 0.05, 0.4 * strength);
+} else {
+playSyntheticImpact(1800, 0.09, 0.35 * strength);
+}
+}
+
 // Spill lyd når mynten treffer bakken
 // strength (0–1) skalerer volumet etter hvor hardt mynten treffer
 function playHitSound(selectedCoinType, strength = 1) {

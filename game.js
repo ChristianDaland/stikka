@@ -190,8 +190,9 @@ scene.add(leaderMarker);
 //
 let currentCoinMesh = null;
 const startPos = new THREE.Vector3(0, 0.05, 1.8);
-let velocity = new THREE.Vector3();
-let rotVelocity = new THREE.Vector3();
+// Hver mynt har egen fart i userData (velocity, rotVelocity, settled),
+// slik at mynter som blir truffet også kan bevege seg
+let knockedPlayers = new Set();   // Spillere som fikk mynten sin truffet i dette kastet
 
 let isDragging = false;
 let isChargingKey = false;
@@ -250,6 +251,7 @@ function startNewRound() {
     // Nullstill rundedata
     roundDistances = new Array(totalPlayers).fill(null);
     leaderMarker.visible = false;
+    clearRoundResult();
 
     // 🔥 Øk vanskelighetsgrad for hver runde
     difficultyLevel++;
@@ -349,6 +351,7 @@ function setupTurn() {
     isChargingKey = false;
     isSettled = false;
     keyPower = 0;
+    keyAimSide = 0;
 
     document.getElementById('next-btn').style.display = 'none';
     setDistanceText('-', "#f1c40f");
@@ -364,6 +367,9 @@ function setupTurn() {
 
     currentCoinMesh = createCoinMeshForType(selectedCoinType, cfg.hex);
     currentCoinMesh.userData.playerIndex = currentPlayerIndex;
+    currentCoinMesh.userData.velocity = new THREE.Vector3();
+    currentCoinMesh.userData.rotVelocity = new THREE.Vector3();
+    currentCoinMesh.userData.settled = false;
     currentCoinMesh.position.copy(startPos);
     scene.add(currentCoinMesh);
     activeCoinsInScene.push(currentCoinMesh);
@@ -403,7 +409,7 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
     if (!isDragging || e.pointerId !== activePointerId) return;
     dragCurrent = { x: e.clientX, y: e.clientY };
-    updateAimTrajectory();
+    updateAimTrajectory(calculateMouseImpulse());
 });
 
 canvas.addEventListener('pointerup', (e) => {
@@ -429,27 +435,60 @@ canvas.addEventListener('pointercancel', (e) => {
 //
 // 🎯 INPUT — TASTATUR
 //
+const CHARGE_KEYS = ['Space', 'ArrowUp', 'KeyW'];
+const AIM_LEFT_KEYS = ['ArrowLeft', 'KeyA'];
+const AIM_RIGHT_KEYS = ['ArrowRight', 'KeyD'];
+const AIM_SPEED = 0.5;   // Hvor fort siktet flytter seg (andel av maks per sekund)
+
+let keyPowerDir = 1;      // Kraftmåleren går frem (1) og tilbake (-1)
+let keyAimSide = 0;       // -1 (venstre) til 1 (høyre)
+const heldAimKeys = new Set();
+
+function isGameKey(code) {
+    return CHARGE_KEYS.includes(code) || AIM_LEFT_KEYS.includes(code) || AIM_RIGHT_KEYS.includes(code);
+}
+
+function isSetupOpen() {
+    return document.getElementById('setup-modal').style.display !== 'none';
+}
+
 window.addEventListener('keydown', (e) => {
+    if (!isGameKey(e.code) || isSetupOpen()) return;
+
+    // Hindrer at mellomrom/piltaster trykker på en knapp som har fokus, eller scroller
+    e.preventDefault();
+
+    if (AIM_LEFT_KEYS.includes(e.code) || AIM_RIGHT_KEYS.includes(e.code)) {
+        heldAimKeys.add(e.code);
+        return;
+    }
+
     if (isThrown || isChargingKey || isDragging || !currentCoinMesh) return;
 
-    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-        isChargingKey = true;
-    }
+    isChargingKey = true;
+    keyPower = 0;
+    keyPowerDir = 1;
 });
 
 window.addEventListener('keyup', (e) => {
-    if (!isChargingKey || !currentCoinMesh) return;
+    if (!isGameKey(e.code) || isSetupOpen()) return;
+    e.preventDefault();
 
-    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-        isChargingKey = false;
+    heldAimKeys.delete(e.code);
 
-        const impulse = calculateKeyImpulse();
-        keyPower = 0;
+    if (!isChargingKey || !currentCoinMesh || !CHARGE_KEYS.includes(e.code)) return;
 
-        playThrowSound(selectedCoinType);
-        executeThrow(impulse);
-    }
+    isChargingKey = false;
+
+    const impulse = calculateKeyImpulse();
+    keyPower = 0;
+
+    playThrowSound(selectedCoinType);
+    executeThrow(impulse);
 });
+
+// Mister vinduet fokus, slippes alle sikte-taster
+window.addEventListener('blur', () => heldAimKeys.clear());
 
 
 //
@@ -492,17 +531,16 @@ function calculateMouseImpulse() {
 // BEREGN TASTATUR-KAST
 //
 function calculateKeyImpulse() {
-    return powerToImpulse(keyPower);
+    return powerToImpulse(keyPower, keyAimSide);
 }
 
 
 //
 // OPPDATER SIKTEKURVE
 //
-function updateAimTrajectory() {
+function updateAimTrajectory(impulse) {
     if (!currentCoinMesh || !selectedCoinType) return;
 
-    const impulse = calculateMouseImpulse();
     let simPos = currentCoinMesh.position.clone();
     let simVel = impulse.clone();
     const dt = 0.04;
@@ -538,8 +576,9 @@ function executeThrow(impulse) {
     isDragging = false;
     isChargingKey = false;
     aimDots.forEach(d => d.visible = false);
-    velocity.copy(impulse);
-    rotVelocity.set(
+    knockedPlayers.clear();
+    currentCoinMesh.userData.velocity.copy(impulse);
+    currentCoinMesh.userData.rotVelocity.set(
         (Math.random() - 0.5) * 8,
         (Math.random() - 0.5) * 8,
         12
@@ -550,22 +589,38 @@ function executeThrow(impulse) {
 // AVSTANDSMÅLING
 //
 // Avstand fra myntens sentrum til nærmeste punkt på streken (et linjestykke)
-function checkDistance() {
-    const pos = currentCoinMesh.position;
+function distanceToStrek(pos) {
     const diffZ = pos.z - STREK_Z;
     const sideX = Math.max(0, Math.abs(pos.x) - STREK_HALF_WIDTH);
-    const absCm = Math.round(Math.hypot(diffZ, sideX) * 100);
-    roundDistances[currentPlayerIndex] = absCm;
+    return { diffZ, sideX, cm: Math.round(Math.hypot(diffZ, sideX) * 100) };
+}
 
+function checkDistance() {
+    // Mål alle myntene på nytt – andre mynter kan ha blitt truffet og flyttet
+    activeCoinsInScene.forEach(c => {
+        roundDistances[c.userData.playerIndex] = distanceToStrek(c.position).cm;
+    });
+
+    const { diffZ, sideX, cm: absCm } = distanceToStrek(currentCoinMesh.position);
     const sideText = sideX > 0 ? " (på siden)" : "";
 
+    let text, color;
     if (absCm === 0) {
-        setDistanceText(`PERFEKT TREFF! (0 cm)`, "#2ecc71");
+        text = `PERFEKT TREFF! (0 cm)`;
+        color = "#2ecc71";
     } else if (diffZ > 0) {
-        setDistanceText(`${absCm} cm for kort${sideText}`, "#e74c3c");
+        text = `${absCm} cm for kort${sideText}`;
+        color = "#e74c3c";
     } else {
-        setDistanceText(`${absCm} cm for langt${sideText}`, "#e67e22");
+        text = `${absCm} cm for langt${sideText}`;
+        color = "#e67e22";
     }
+
+    if (knockedPlayers.size > 0) {
+        const names = [...knockedPlayers].map(i => PLAYER_CONFIGS[i].name).join(' og ');
+        text += ` · traff mynten til ${names}!`;
+    }
+    setDistanceText(text, color);
 
     updateLeaderMarker();
     refreshScoreboard();
@@ -599,19 +654,157 @@ function nextTurn() {
         const bestDistance = roundDistances[winnerIndex];
         coinCounts[winnerIndex] += potSize;
         refreshScoreboard();
-
-        alert(`${PLAYER_CONFIGS[winnerIndex].name} var nærmest streken (${bestDistance} cm) og vinner ${potSize} mynter!`);
-
-        const activePlayersCount = coinCounts.filter(c => c > 0).length;
-
-        if (activePlayersCount <= 1) {
-            const overallWinner = coinCounts.findIndex(c => c > 0);
-            alert(`GAME OVER!\n${PLAYER_CONFIGS[overallWinner].name} har samlet alle myntene og vunnet spillet!`);
-            document.getElementById('setup-modal').style.display = 'flex';
-        } else {
-            startNewRound();
-        }
+        showRoundResult(winnerIndex, bestDistance, potSize);
     }
+}
+
+//
+// RUNDERESULTAT – kameraet glir ned til streken og viser vinneren
+//
+const overviewCamPos = new THREE.Vector3();
+const overviewLookTarget = new THREE.Vector3();
+const overviewLook = new THREE.Vector3();
+let overviewActive = false;
+
+// Stripe på bakken fra vinnermynten til nærmeste punkt på streken
+const measureLine = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+);
+measureLine.visible = false;
+scene.add(measureLine);
+
+function showMeasureLine(coin, hex) {
+    const from = coin.position;
+    const toX = Math.min(STREK_HALF_WIDTH, Math.max(-STREK_HALF_WIDTH, from.x));
+    const dx = toX - from.x;
+    const dz = STREK_Z - from.z;
+    const length = Math.hypot(dx, dz);
+
+    measureLine.scale.set(0.04, 0.004, Math.max(length, 0.001));
+    measureLine.position.set(from.x + dx / 2, LEADER_MARKER_Y, from.z + dz / 2);
+    measureLine.rotation.y = Math.atan2(dx, dz);
+    measureLine.material.color.set(hex);
+    measureLine.visible = length > 0;
+}
+
+function showRoundResult(winnerIndex, bestDistance, potSize) {
+    document.getElementById('next-btn').style.display = 'none';
+
+    const winner = PLAYER_CONFIGS[winnerIndex];
+    const winnerCoin = activeCoinsInScene.find(c => c.userData.playerIndex === winnerIndex);
+
+    // Kameraet glir fra der det er til et punkt over vinnermynten og streken
+    overviewLookTarget.set(winnerCoin.position.x / 2, 0, (winnerCoin.position.z + STREK_Z) / 2);
+    overviewCamPos.copy(overviewLookTarget).add(new THREE.Vector3(0, 3.2, 4.2));
+    overviewLook.set(currentCoinMesh.position.x * 0.3, 0.5, currentCoinMesh.position.z);
+    overviewActive = true;
+
+    showMeasureLine(winnerCoin, winner.hex);
+
+    // Resultatliste, nærmest først
+    const rows = roundOrder
+        .filter(i => roundDistances[i] !== null)
+        .sort((a, b) => roundDistances[a] - roundDistances[b])
+        .map(i => ({
+            name: PLAYER_CONFIGS[i].name,
+            hex: PLAYER_CONFIGS[i].hex,
+            value: `${roundDistances[i]} cm`,
+            highlight: i === winnerIndex
+        }));
+
+    const subtitle = `${bestDistance} cm fra streken · vinner ${potSize} mynter`;
+    const isGameOver = coinCounts.filter(c => c > 0).length <= 1;
+
+    if (isGameOver) {
+        const overallWinner = PLAYER_CONFIGS[coinCounts.findIndex(c => c > 0)];
+        showRoundOverlay(
+            `🏆 ${overallWinner.name} har vunnet spillet!`,
+            `${winner.name}: ${subtitle}`,
+            rows,
+            "Nytt spill",
+            () => {
+                hideRoundOverlay();
+                document.getElementById('setup-modal').style.display = 'flex';
+            }
+        );
+    } else {
+        showRoundOverlay(
+            `${winner.name} vinner runden!`,
+            subtitle,
+            rows,
+            "Neste runde",
+            () => startNewRound()
+        );
+    }
+}
+
+// Skjul alt fra rundeoppsummeringen
+function clearRoundResult() {
+    hideRoundOverlay();
+    overviewActive = false;
+    measureLine.visible = false;
+}
+
+//
+// FYSIKK FOR ALLE MYNTER I BEVEGELSE
+//
+const MAX_SUBSTEP_MOVE = 0.1;   // Maks forflytning per delsteg, så raske mynter ikke går gjennom andre
+const MAX_SUBSTEPS = 12;
+
+function stepCoins(dt) {
+    const moving = activeCoinsInScene.filter(c => !c.userData.settled);
+    if (moving.length === 0) return;
+
+    const maxSpeed = Math.max(...moving.map(c => c.userData.velocity.length()));
+    const substeps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(maxSpeed * dt / MAX_SUBSTEP_MOVE)));
+    const subDt = dt / substeps;
+
+    for (let s = 0; s < substeps; s++) {
+        activeCoinsInScene.forEach(coin => {
+            if (coin.userData.settled) return;
+
+            const state = {
+                selectedCoinType,
+                currentCoinMesh: coin,
+                velocity: coin.userData.velocity,
+                rotVelocity: coin.userData.rotVelocity
+            };
+
+            applyPhysicsStep(subDt, state);
+            handleGroundCollision(subDt, state, {
+                onImpact: (speed) => onCoinImpact(coin, speed),
+                onSettled: () => { coin.userData.settled = true; }
+            });
+        });
+
+        resolveCoinCollisions(activeCoinsInScene, selectedCoinType, onCoinCollision);
+    }
+}
+
+// Treff i bakken – effektene skaleres etter fallfarten
+function onCoinImpact(coin, speed) {
+    const strength = Math.min(1, speed / 6);
+
+    playHitSound(selectedCoinType, strength);
+    spawnParticles(scene, coin.position.clone(), selectedCoinType.id);
+
+    triggerCameraShake(
+        (selectedCoinType.weight > 1.0 ? 0.16 :
+        selectedCoinType.weight < 0.5 ? 0.08 :
+        0.12) * strength
+    );
+}
+
+// Mynt mot mynt
+function onCoinCollision(a, b, speed, point) {
+    [a, b].forEach(c => {
+        if (c !== currentCoinMesh) knockedPlayers.add(c.userData.playerIndex);
+    });
+
+    if (speed < 0.3) return;   // Små dytt gir ingen effekt
+    playCoinClink(selectedCoinType, Math.min(1, speed / 5));
+    spawnParticles(scene, new THREE.Vector3(point.x, point.y, point.z), selectedCoinType.id);
 }
 
 //
@@ -624,53 +817,36 @@ function animate() {
 
     const dt = Math.min(clock.getDelta(), 0.05);
 
-    // Lading av tastaturkast
+    // Sikting med tastaturet (A/D eller piltaster)
+    if (!isThrown && !isDragging && currentCoinMesh) {
+        const aimDir =
+            (AIM_RIGHT_KEYS.some(k => heldAimKeys.has(k)) ? 1 : 0) -
+            (AIM_LEFT_KEYS.some(k => heldAimKeys.has(k)) ? 1 : 0);
+        keyAimSide = Math.min(1, Math.max(-1, keyAimSide + aimDir * AIM_SPEED * dt));
+    }
+
+    // Lading av tastaturkast – kraften går frem og tilbake mellom 0 og 100
     if (isChargingKey && !isThrown) {
-        keyPower = (keyPower + dt * 120) % 100;
-        setPowerBar(keyPower);
+        keyPower += keyPowerDir * dt * 120;
+        if (keyPower >= 100) { keyPower = 100; keyPowerDir = -1; }
+        if (keyPower <= 0) { keyPower = 0; keyPowerDir = 1; }
+    }
+
+    // Siktekurve for tastaturet: mens man lader, eller når siktet er flyttet til siden
+    if (!isThrown && !isDragging && currentCoinMesh && (isChargingKey || keyAimSide !== 0)) {
+        updateAimTrajectory(calculateKeyImpulse());
     }
 
     // Fysikk når mynten er kastet
     if (isThrown && !isSettled && currentCoinMesh) {
 
-        applyPhysicsStep(dt, {
-            selectedCoinType,
-            currentCoinMesh,
-            velocity,
-            rotVelocity
-        });
+        stepCoins(dt);
 
-        handleGroundCollision(dt, {
-            selectedCoinType,
-            currentCoinMesh,
-            velocity,
-            rotVelocity
-        }, {
-            // Treff i bakken – effektene skaleres etter fallfarten
-            onImpact: (speed) => {
-                const strength = Math.min(1, speed / 6);
-
-                playHitSound(selectedCoinType, strength);
-
-                spawnParticles(
-                    scene,
-                    currentCoinMesh.position.clone(),
-                    selectedCoinType.id
-                );
-
-                triggerCameraShake(
-                    (selectedCoinType.weight > 1.0 ? 0.16 :
-                    selectedCoinType.weight < 0.5 ? 0.08 :
-                    0.12) * strength
-                );
-            },
-
-            // Mynten ligger i ro
-            onSettled: () => {
-                isSettled = true;
-                checkDistance();
-            }
-        });
+        // Kastet er ferdig når alle myntene ligger i ro
+        if (activeCoinsInScene.every(c => c.userData.settled)) {
+            isSettled = true;
+            checkDistance();
+        }
 
         // Kamera følger mynten
         const targetCamZ = Math.min(defaultCamPos.z, currentCoinMesh.position.z + 3.5);
@@ -681,6 +857,14 @@ function animate() {
             0.5,
             currentCoinMesh.position.z
         );
+    }
+
+    // Rundeoppsummering: kameraet glir mykt ned til vinnermynten
+    if (overviewActive) {
+        const ease = 1 - frameDamping(0.94, dt);
+        camera.position.lerp(overviewCamPos, ease);
+        overviewLook.lerp(overviewLookTarget, ease);
+        camera.lookAt(overviewLook);
     }
 
     // Leder-ringen pulserer svakt

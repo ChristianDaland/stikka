@@ -86,3 +86,57 @@ callbacks.onSettled();
 }
 }
 }
+
+// Kollisjon mellom mynter som ligger/glir på bakken (sirkel mot sirkel i x/z-planet)
+// onHit(myntA, myntB, fart, kontaktpunkt) kalles for hvert nytt sammenstøt
+function resolveCoinCollisions(coins, coinType, onHit) {
+const minDist = coinType.radius * 2;
+const maxDy = coinType.height * 1.5;   // En mynt i luften over en annen kolliderer ikke
+const restitution = 0.5 + coinType.bounce;
+
+for (let i = 0; i < coins.length; i++) {
+for (let j = i + 1; j < coins.length; j++) {
+const a = coins[i];
+const b = coins[j];
+if (Math.abs(a.position.y - b.position.y) > maxDy) continue;
+
+const dx = b.position.x - a.position.x;
+const dz = b.position.z - a.position.z;
+const dist = Math.hypot(dx, dz);
+if (dist >= minDist || dist === 0) continue;
+
+const nx = dx / dist;
+const nz = dz / dist;
+
+// Skyv myntene fra hverandre så de ikke overlapper
+const push = (minDist - dist) / 2;
+a.position.x -= nx * push;
+a.position.z -= nz * push;
+b.position.x += nx * push;
+b.position.z += nz * push;
+
+// Relativ fart langs normalen – bare mynter som nærmer seg hverandre støter
+const va = a.userData.velocity;
+const vb = b.userData.velocity;
+const relSpeed = (vb.x - va.x) * nx + (vb.z - va.z) * nz;
+if (relSpeed >= 0) continue;
+
+// Like tunge mynter: impulsen deles likt
+const impulse = -(1 + restitution) * relSpeed / 2;
+va.x -= impulse * nx;
+va.z -= impulse * nz;
+vb.x += impulse * nx;
+vb.z += impulse * nz;
+
+// Begge myntene kommer i bevegelse igjen
+a.userData.settled = false;
+b.userData.settled = false;
+
+onHit(a, b, -relSpeed, {
+x: a.position.x + nx * coinType.radius,
+y: a.position.y,
+z: a.position.z + nz * coinType.radius
+});
+}
+}
+}

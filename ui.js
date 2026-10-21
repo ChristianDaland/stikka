@@ -30,6 +30,43 @@ list.appendChild(item);
 }
 }
 
+// Vis rundeoppsummeringen nederst på skjermen
+// rows: [{ name, hex, value, highlight }]
+function showRoundOverlay(title, subtitle, rows, buttonText, onButton) {
+document.getElementById('round-title').textContent = title;
+document.getElementById('round-subtitle').textContent = subtitle;
+
+const list = document.getElementById('round-results');
+list.innerHTML = "";
+
+rows.forEach(row => {
+const item = document.createElement('div');
+item.className = 'round-row' + (row.highlight ? ' winner' : '');
+item.style.color = row.hex;
+
+const name = document.createElement('span');
+name.textContent = row.name;
+const value = document.createElement('span');
+value.textContent = row.value;
+
+item.append(name, value);
+list.appendChild(item);
+});
+
+const btn = document.getElementById('round-btn');
+btn.textContent = buttonText;
+btn.onclick = onButton;
+
+document.getElementById('round-overlay').style.display = 'block';
+document.getElementById('instructions').style.display = 'none';
+btn.focus();   // Enter går videre
+}
+
+function hideRoundOverlay() {
+document.getElementById('round-overlay').style.display = 'none';
+document.getElementById('instructions').style.display = '';
+}
+
 // Svart eller hvit tekst, avhengig av hvor lys bakgrunnsfargen er
 function readableTextColor(hex) {
 const r = parseInt(hex.slice(1, 3), 16);
