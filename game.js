@@ -17,8 +17,6 @@ const STREK_MIN_Z = -28;   // Lengst unna streken kan ligge (fullt kast når ca.
 const STREK_HALF_WIDTH = 2;   // Streken går fra x = -2 til x = 2
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.FogExp2(0x87ceeb, 0.015);
 
 const camera = new THREE.PerspectiveCamera(
     50,
@@ -32,133 +30,24 @@ camera.position.copy(defaultCamPos);
 camera.lookAt(0, 0.8, -10);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;           // Riktige farger på skjermen
+renderer.toneMapping = THREE.ACESFilmicToneMapping;     // Filmisk lys, som et kamera
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
-// Lys
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-
-const sunLight = new THREE.DirectionalLight(0xfff2cc, 0.9);
-sunLight.position.set(-15, 20, 5);
-sunLight.castShadow = true;
-sunLight.shadow.mapSize.width = 2048;
-sunLight.shadow.mapSize.height = 2048;
-
-// Skyggekameraet må dekke hele kastebanen, ikke bare ±5 m rundt origo
-sunLight.target.position.set(0, 0, -14);
-sunLight.position.set(-15, 20, -9);
-const shadowCam = sunLight.shadow.camera;
-shadowCam.left = -22;
-shadowCam.right = 22;
-shadowCam.top = 22;
-shadowCam.bottom = -22;
-shadowCam.near = 1;
-shadowCam.far = 70;
-sunLight.shadow.bias = -0.0005;
-scene.add(sunLight);
-scene.add(sunLight.target);
-
-scene.add(new THREE.HemisphereLight(0x87ceeb, 0x5c8a4d, 0.6));
-
-// Teksturer
-const textureLoader = new THREE.TextureLoader();
-
-// Grusvei
-const gravelTex = textureLoader.load('textures/Gravel.jpg');
-gravelTex.wrapS = gravelTex.wrapT = THREE.RepeatWrapping;
-gravelTex.repeat.set(6, 40);
-
-const road = new THREE.Mesh(
-    new THREE.PlaneGeometry(6, 40),
-    new THREE.MeshStandardMaterial({
-        map: gravelTex,
-        roughness: 1.0,
-        bumpMap: gravelTex,
-        bumpScale: 0.15
-    })
-);
-road.rotation.x = -Math.PI / 2;
-road.position.z = -15;
-road.receiveShadow = true;
-scene.add(road);
-
-// Gress
-const grassTex = textureLoader.load('textures/Grass.jpg');
-grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
-grassTex.repeat.set(50, 50);
-
-const grass = new THREE.Mesh(
-    new THREE.PlaneGeometry(100, 100),
-    new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1.0 })
-);
-grass.rotation.x = -Math.PI / 2;
-grass.position.y = -0.01;
-grass.receiveShadow = true;
-scene.add(grass);
-
-//
-// TYDELIG H-STREK
-//
-
-// Lagene ligger under hverandre, fra bredest nederst til selve streken øverst
-// (bakken y=0 → lys kant 0.002 → outline 0.003 → skygge 0.004 → strek)
-
-// Hovedstrek
-const mainTrench = new THREE.Mesh(
-    new THREE.BoxGeometry(4, 0.02, 0.15),
-    new THREE.MeshStandardMaterial({
-        color: 0x1a0f06,
-        roughness: 0.85,
-        metalness: 0.05,
-        bumpMap: gravelTex,
-        bumpScale: 0.15
-    })
-);
-mainTrench.position.set(0, 0.006, STREK_Z);
-scene.add(mainTrench);
-
-// Lysere kant – bredere enn resten, så den synes rundt streken
-const mainHighlight = new THREE.Mesh(
-    new THREE.BoxGeometry(4.5, 0.001, 0.25),
-    new THREE.MeshStandardMaterial({ color: 0xf6d9a3 })
-);
-mainHighlight.position.set(0, 0.002, STREK_Z);
-scene.add(mainHighlight);
-
-// Skygge
-const mainShadow = new THREE.Mesh(
-    new THREE.BoxGeometry(4.3, 0.001, 0.18),
-    new THREE.MeshStandardMaterial({
-        color: 0x000000,
-        roughness: 1.0,
-        transparent: true,
-        opacity: 0.35
-    })
-);
-mainShadow.position.set(0, 0.004, STREK_Z);
-scene.add(mainShadow);
-
-// Outline
-const outline = new THREE.Mesh(
-    new THREE.BoxGeometry(4.4, 0.001, 0.19),
-    new THREE.MeshStandardMaterial({
-        color: 0x000000,
-        roughness: 1.0,
-        transparent: true,
-        opacity: 0.25
-    })
-);
-outline.position.set(0, 0.003, STREK_Z);
-scene.add(outline);
+// Himmel, lys, bakke, gress, trær og streken (scenery.js)
+const scenery = createScenery(scene, renderer);
 
 //
 // SIKTEPRIKKER
 //
 const aimDots = [];
 const aimDotGeo = new THREE.SphereGeometry(0.04, 8, 8);
-const aimDotMat = new THREE.MeshBasicMaterial({ color: 0xf1c40f });
+const aimDotMat = new THREE.MeshBasicMaterial({ color: srgbColor(0xf1c40f), toneMapped: false });
 
 for (let i = 0; i < 20; i++) {
     const dot = new THREE.Mesh(aimDotGeo, aimDotMat);
@@ -178,7 +67,8 @@ const leaderMarker = new THREE.Mesh(
         transparent: true,
         opacity: 0.85,
         side: THREE.DoubleSide,
-        depthWrite: false
+        depthWrite: false,
+        toneMapped: false
     })
 );
 leaderMarker.rotation.x = -Math.PI / 2;
@@ -245,7 +135,10 @@ document.getElementById('next-btn').addEventListener('click', () => {
 //
 function startNewRound() {
     // Fjern gamle mynter
-    activeCoinsInScene.forEach(c => scene.remove(c));
+    activeCoinsInScene.forEach(c => {
+        scene.remove(c);
+        removeContactShadow(c);
+    });
     activeCoinsInScene = [];
 
     // Nullstill rundedata
@@ -266,11 +159,8 @@ function startNewRound() {
         (-10 - Math.random() * 2) - (difficultyLevel * 0.8)
     );
 
-    // 🔥 Oppdater strek-objektene
-    mainTrench.position.z = STREK_Z;
-    mainHighlight.position.z = STREK_Z;
-    mainShadow.position.z = STREK_Z;
-    outline.position.z = STREK_Z;
+    // 🔥 Flytt streken
+    scenery.strek.position.z = STREK_Z;
 
     // Startspilleren går på rundgang, så ingen alltid kaster først (eller sist)
     const starter = nextPlayerWithCoins(roundStartPlayer);
@@ -337,7 +227,7 @@ function updateLeaderMarker() {
     }
 
     leaderMarker.position.set(coin.position.x, LEADER_MARKER_Y, coin.position.z);
-    leaderMarker.material.color.set(PLAYER_CONFIGS[leader].hex);
+    leaderMarker.material.color.set(PLAYER_CONFIGS[leader].hex).convertSRGBToLinear();
     leaderMarker.visible = true;
 }
 
@@ -370,6 +260,8 @@ function setupTurn() {
     currentCoinMesh.userData.velocity = new THREE.Vector3();
     currentCoinMesh.userData.rotVelocity = new THREE.Vector3();
     currentCoinMesh.userData.settled = false;
+    currentCoinMesh.userData.contactShadow = createContactShadow(selectedCoinType);
+    scene.add(currentCoinMesh.userData.contactShadow);
     currentCoinMesh.position.copy(startPos);
     scene.add(currentCoinMesh);
     activeCoinsInScene.push(currentCoinMesh);
@@ -669,7 +561,7 @@ let overviewActive = false;
 // Stripe på bakken fra vinnermynten til nærmeste punkt på streken
 const measureLine = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({ color: 0xffffff })
+    new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false })
 );
 measureLine.visible = false;
 scene.add(measureLine);
@@ -684,7 +576,7 @@ function showMeasureLine(coin, hex) {
     measureLine.scale.set(0.04, 0.004, Math.max(length, 0.001));
     measureLine.position.set(from.x + dx / 2, LEADER_MARKER_Y, from.z + dz / 2);
     measureLine.rotation.y = Math.atan2(dx, dz);
-    measureLine.material.color.set(hex);
+    measureLine.material.color.set(hex).convertSRGBToLinear();
     measureLine.visible = length > 0;
 }
 
@@ -696,7 +588,9 @@ function showRoundResult(winnerIndex, bestDistance, potSize) {
 
     // Kameraet glir fra der det er til et punkt over vinnermynten og streken
     overviewLookTarget.set(winnerCoin.position.x / 2, 0, (winnerCoin.position.z + STREK_Z) / 2);
-    overviewCamPos.copy(overviewLookTarget).add(new THREE.Vector3(0, 3.2, 4.2));
+    const span = Math.hypot(winnerCoin.position.x, winnerCoin.position.z - STREK_Z);
+    const dist = Math.max(1, span * 0.55 + 0.8);
+    overviewCamPos.copy(overviewLookTarget).add(new THREE.Vector3(0, 2.4 * dist, 3.2 * dist));
     overviewLook.set(currentCoinMesh.position.x * 0.3, 0.5, currentCoinMesh.position.z);
     overviewActive = true;
 
@@ -787,7 +681,7 @@ function onCoinImpact(coin, speed) {
     const strength = Math.min(1, speed / 6);
 
     playHitSound(selectedCoinType, strength);
-    spawnParticles(scene, coin.position.clone(), selectedCoinType.id);
+    spawnParticles(scene, coin.position.clone(), strength);
 
     triggerCameraShake(
         (selectedCoinType.weight > 1.0 ? 0.16 :
@@ -804,7 +698,7 @@ function onCoinCollision(a, b, speed, point) {
 
     if (speed < 0.3) return;   // Små dytt gir ingen effekt
     playCoinClink(selectedCoinType, Math.min(1, speed / 5));
-    spawnParticles(scene, new THREE.Vector3(point.x, point.y, point.z), selectedCoinType.id);
+    spawnParticles(scene, new THREE.Vector3(point.x, point.y, point.z), Math.min(0.5, speed / 8));
 }
 
 //
@@ -866,6 +760,12 @@ function animate() {
         overviewLook.lerp(overviewLookTarget, ease);
         camera.lookAt(overviewLook);
     }
+
+    // Kontaktskygger følger myntene
+    activeCoinsInScene.forEach(c => updateContactShadow(c, selectedCoinType));
+
+    // Himmelen følger kameraet
+    scenery.update(camera);
 
     // Leder-ringen pulserer svakt
     if (leaderMarker.visible) {
